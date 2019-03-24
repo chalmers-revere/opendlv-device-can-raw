@@ -42,6 +42,6 @@ FROM pipill/armhf-alpine:edge
 MAINTAINER Christian Berger "christian.berger@gu.se"
 
 WORKDIR /usr/bin
-COPY --from=builder /tmp/opendlv-device-can-raw-dest/bin/opendlv-device-can-raw .
+COPY --from=builder /tmp/bin/opendlv-device-can-raw .
 ENTRYPOINT ["/usr/bin/opendlv-device-can-raw"]
 
