@@ -121,14 +121,20 @@ int32_t main(int32_t argc, char **argv) {
                         socketTimeStamp.tv_sec = now.seconds();
                         socketTimeStamp.tv_usec = now.microseconds();
                     }
+                    union CANData {
+                        char bytes[8];
+                        uint64_t value{0};
+                    } canData;
+                    std::memcpy(canData.bytes, reinterpret_cast<char*>(frame.data), frame.can_dlc);
+
                     cluon::data::TimeStamp sampleTimeStamp;
                     sampleTimeStamp.seconds(socketTimeStamp.tv_sec)
                                    .microseconds(socketTimeStamp.tv_usec);
-                    opendlv::proxy::RawCANFrame rawCANFrame;
-                    rawCANFrame.canID(frame.can_id)
-                               .length(frame.can_dlc)
-                               .data(std::string(reinterpret_cast<char*>(frame.data), frame.can_dlc));
-                    od4.send(rawCANFrame, sampleTimeStamp, ID);
+                    opendlv::proxy::RawUInt64CANFrame rawUInt64CANFrame;
+                    rawUInt64CANFrame.canID(frame.can_id)
+                                     .length(frame.can_dlc)
+                                     .data(canData.value);
+                    od4.send(rawUInt64CANFrame, sampleTimeStamp, ID);
                 }
             }
 #endif
