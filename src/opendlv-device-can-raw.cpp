@@ -126,6 +126,7 @@ int32_t main(int32_t argc, char **argv) {
                         uint64_t value{0};
                     } canData;
                     std::memcpy(canData.bytes, reinterpret_cast<char*>(frame.data), frame.can_dlc);
+                    canData.value = htobe64(canData.value);
 
                     cluon::data::TimeStamp sampleTimeStamp;
                     sampleTimeStamp.seconds(socketTimeStamp.tv_sec)
