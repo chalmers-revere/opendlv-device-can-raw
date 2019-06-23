@@ -88,7 +88,7 @@ int32_t main(int32_t argc, char **argv) {
         std::string nameOfRecFile;
         std::mutex recFileMutex{};
         std::unique_ptr<std::fstream> recFile{nullptr};
-        if (!REMOTE && !NAME_RECFILE.empty()) {
+        if (!REMOTE && !REC.empty()) {
           recFile.reset(new std::fstream(NAME_RECFILE.c_str(), std::ios::out|std::ios::binary|std::ios::trunc));
           std::cout << "[opendlv-device-can-raw]: Created " << NAME_RECFILE << "." << std::endl;
         }
