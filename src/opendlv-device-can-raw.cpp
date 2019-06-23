@@ -228,7 +228,7 @@ int32_t main(int32_t argc, char **argv) {
                         std::memcpy(canData.bytes, reinterpret_cast<char*>(frame.data), frame.can_dlc);
 
                         if (VERBOSE) {
-                            std::cout << "[opendlv-device-can-raw]: " << canDevice.name << " " << frame.can_id << " [" << frame.can_dlc << "] " << std::hex << "0x" << canData.value << " (ID = " << canDevice.ID << ")" << std::dec << std::endl;
+                            std::cout << "[opendlv-device-can-raw]: " << canDevice.name << " 0x" << std::hex << frame.can_id << std::dec << " [" << +frame.can_dlc << "] " << std::hex << "0x" << canData.value << " (ID = " << canDevice.ID << ")" << std::dec << std::endl;
                         }
 
                         cluon::data::TimeStamp sampleTimeStamp;
