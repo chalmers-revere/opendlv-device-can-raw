@@ -44,12 +44,13 @@ int32_t main(int32_t argc, char **argv) {
     auto commandlineArguments = cluon::getCommandlineArguments(argc, argv);
     if ( (0 == commandlineArguments.count("cid")) ) {
         std::cerr << argv[0] << " captures the raw content of a CAN frame from a list of given CAN devices into an opendlv.proxy.RawCANFrame message that are either sent to an ongoing OD4 session or directly dumped to disk." << std::endl;
-        std::cerr << "Usage:   " << argv[0] << " --cid=<OD4 session> --can-channels=CANdevice:ID[,CANdevice:ID]*" << std::endl;
+        std::cerr << "Usage:   " << argv[0] << " --cid=<OD4 session> --can-channels=CANdevice:ID[,CANdevice:ID]* [--verbose]" << std::endl;
         std::cerr << "         --can-channels: list of CAN devices followed by colon and a senderStamp per CAN  channel to differentiate the CAN frames" << std::endl;
         std::cerr << "         --cid:          CID of the OD4Session to send messages" << std::endl;
         std::cerr << "         --remote:       enable remotely activated recording" << std::endl;
         std::cerr << "         --rec:          name of the recording file; default: YYYY-MM-DD_HHMMSS.rec" << std::endl;
         std::cerr << "         --recsuffix:    additional suffix to add to the .rec file" << std::endl;
+        std::cerr << "         --verbose:      print received frames" << std::endl;
 
         std::cerr << "Example: " << argv[0] << " --cid=111 --can-channels=can0:0,can1:1" << std::endl;
     }
@@ -58,6 +59,7 @@ int32_t main(int32_t argc, char **argv) {
         std::cerr << "[opendlv-device-can-raw]: SocketCAN not available on this platform. " << std::endl;
         return retCode;
 #else
+        const bool VERBOSE{commandlineArguments.count("verbose") != 0};
         const std::string CAN_CHANNELS{commandlineArguments["can-channels"]};
         auto getYYYYMMDD_HHMMSS = [](){
           cluon::data::TimeStamp now = cluon::time::now();
@@ -141,7 +143,7 @@ int32_t main(int32_t argc, char **argv) {
         };
 
         std::vector<struct CAN_CHANNEL> listOfCANDevices;
-        std::vector<std::string> canChannels = stringtoolbox::split(CAN_CHANNELS, ',');
+        std::vector<std::string> canChannels = stringtoolbox::split(CAN_CHANNELS + ",", ',');
         for (auto canChannel : canChannels) {
           std::vector<std::string> aCanChannel = stringtoolbox::split(canChannel, ':');
           if (aCanChannel.size() == 2) {
@@ -224,6 +226,10 @@ int32_t main(int32_t argc, char **argv) {
                             uint64_t value{0};
                         } canData;
                         std::memcpy(canData.bytes, reinterpret_cast<char*>(frame.data), frame.can_dlc);
+
+                        if (VERBOSE) {
+                            std::cout << "[opendlv-device-can-raw]: " << canDevice.name << " " << frame.can_id << " [" << frame.can_dlc << "] " << std::hex << "0x" << canData.value << " (ID = " << canDevice.ID << ")" << std::dec << std::endl;
+                        }
 
                         cluon::data::TimeStamp sampleTimeStamp;
                         sampleTimeStamp.seconds(socketTimeStamp.tv_sec)
