@@ -33,6 +33,9 @@
 #include <cstring>
 
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <sstream>
 #include <string>
 
 int32_t main(int32_t argc, char **argv) {
@@ -41,16 +44,90 @@ int32_t main(int32_t argc, char **argv) {
     if ( (0 == commandlineArguments.count("cid")) ) {
         std::cerr << argv[0] << " captures the raw content of a CAN frame into an opendlv.proxy.RawCANFrame message." << std::endl;
         std::cerr << "Usage:   " << argv[0] << " --cid=<OD4 session> [--id=ID] --can=<name of the CAN device>" << std::endl;
-        std::cerr << "         --cid:    CID of the OD4Session to send messages" << std::endl;
-        std::cerr << "         --id:     ID to use as senderStamp for sending" << std::endl;
+        std::cerr << "         --cid:       CID of the OD4Session to send messages" << std::endl;
+        std::cerr << "         --id:        ID to use as senderStamp for sending" << std::endl;
+        std::cerr << "         --remote:    enable remotely activated recording" << std::endl;
+        std::cerr << "         --rec:       name of the recording file; default: YYYY-MM-DD_HHMMSS.rec" << std::endl;
+        std::cerr << "         --recsuffix: additional suffix to add to the .rec file" << std::endl;
+
         std::cerr << "Example: " << argv[0] << " --cid=111 --can=can0" << std::endl;
     }
     else {
         const std::string CANDEVICE{commandlineArguments["can"]};
         const uint32_t ID{(commandlineArguments["id"].size() != 0) ? static_cast<uint32_t>(std::stoi(commandlineArguments["id"])) : 0};
 
-        // Interface to a running OpenDaVINCI session; here, you can send and receive messages.
-        cluon::OD4Session od4{static_cast<uint16_t>(std::stoi(commandlineArguments["cid"]))};
+        auto getYYYYMMDD_HHMMSS = [](){
+          cluon::data::TimeStamp now = cluon::time::now();
+
+          const long int _seconds = now.seconds();
+          struct tm *tm = localtime(&_seconds);
+
+          uint32_t year = (1900 + tm->tm_year);
+          uint32_t month = (1 + tm->tm_mon);
+          uint32_t dayOfMonth = tm->tm_mday;
+          uint32_t hours = tm->tm_hour;
+          uint32_t minutes = tm->tm_min;
+          uint32_t seconds = tm->tm_sec;
+
+          std::stringstream sstr;
+          sstr << year << "-" << ( (month < 10) ? "0" : "" ) << month << "-" << ( (dayOfMonth < 10) ? "0" : "" ) << dayOfMonth
+                         << "_" << ( (hours < 10) ? "0" : "" ) << hours
+                         << ( (minutes < 10) ? "0" : "" ) << minutes
+                         << ( (seconds < 10) ? "0" : "" ) << seconds;
+
+          std::string retVal{sstr.str()};
+          return retVal;
+        };
+        const bool REMOTE{commandlineArguments.count("remote") != 0};
+        const std::string REC{(commandlineArguments["rec"].size() != 0) ? commandlineArguments["rec"] : ""};
+        const std::string RECSUFFIX{commandlineArguments["recsuffix"]};
+        const std::string NAME_RECFILE{(REC.size() != 0) ? REC + RECSUFFIX : (getYYYYMMDD_HHMMSS() + RECSUFFIX + ".rec")};
+
+        std::unique_ptr<cluon::OD4Session> od4{new cluon::OD4Session(static_cast<uint16_t>(std::stoi(commandlineArguments["cid"])))};
+
+        std::string nameOfRecFile;
+        std::mutex recFileMutex{};
+        std::unique_ptr<std::fstream> recFile{nullptr};
+        if (!REMOTE && !NAME_RECFILE.empty()) {
+          recFile.reset(new std::fstream(NAME_RECFILE.c_str(), std::ios::out|std::ios::binary|std::ios::trunc));
+          std::cout << "[opendlv-device-can-raw]: Created " << NAME_RECFILE << "." << std::endl;
+        }
+        else {
+          od4.reset(new cluon::OD4Session(static_cast<uint16_t>(std::stoi(commandlineArguments["cid"])),
+              [REC, RECSUFFIX, getYYYYMMDD_HHMMSS, &recFileMutex, &recFile, &nameOfRecFile](cluon::data::Envelope &&envelope) noexcept {
+            if (cluon::data::RecorderCommand::ID() == envelope.dataType()) {
+              std::lock_guard<std::mutex> lck(recFileMutex);
+              cluon::data::RecorderCommand rc = cluon::extractMessage<cluon::data::RecorderCommand>(std::move(envelope));
+              if (1 == rc.command()) {
+                if (recFile && recFile->good()) {
+                  recFile->flush();
+                  recFile->close();
+                  recFile = nullptr;
+                  std::cout << "[opendlv-device-can-raw]: Closed " << nameOfRecFile << "." << std::endl;
+                }
+                nameOfRecFile = (REC.size() != 0) ? REC + RECSUFFIX : (getYYYYMMDD_HHMMSS() + RECSUFFIX + ".rec");
+                recFile.reset(new std::fstream(nameOfRecFile.c_str(), std::ios::out|std::ios::binary|std::ios::trunc));
+                std::cout << "[opendlv-device-can-raw]: Created " << nameOfRecFile << "." << std::endl;
+              }
+              else if (2 == rc.command()) {
+                if (recFile && recFile->good()) {
+                  recFile->flush();
+                  recFile->close();
+                  std::cout << "[opendlv-device-can-raw]: Closed " << nameOfRecFile << "." << std::endl;
+                }
+                recFile = nullptr;
+              }
+            }
+            else {
+              std::lock_guard<std::mutex> lck(recFileMutex);
+              if (recFile && recFile->good()) {
+                std::string serializedData{cluon::serializeEnvelope(std::move(envelope))};
+                recFile->write(serializedData.data(), serializedData.size());
+                recFile->flush();
+              }
+            }
+          }));
+        }
 
 #ifdef __linux__
         struct sockaddr_can address;
@@ -101,7 +178,7 @@ int32_t main(int32_t argc, char **argv) {
         struct timeval socketTimeStamp;
         int32_t nbytes = 0;
 
-        while (od4.isRunning() && socketCAN > -1) {
+        while (od4->isRunning() && socketCAN > -1) {
 #ifdef __linux__
             timeout.tv_sec = 1;
             timeout.tv_usec = 0;
@@ -126,7 +203,6 @@ int32_t main(int32_t argc, char **argv) {
                         uint64_t value{0};
                     } canData;
                     std::memcpy(canData.bytes, reinterpret_cast<char*>(frame.data), frame.can_dlc);
-                    canData.value = htobe64(canData.value);
 
                     cluon::data::TimeStamp sampleTimeStamp;
                     sampleTimeStamp.seconds(socketTimeStamp.tv_sec)
@@ -135,7 +211,28 @@ int32_t main(int32_t argc, char **argv) {
                     rawUInt64CANFrame.canID(frame.can_id)
                                      .length(frame.can_dlc)
                                      .data(canData.value);
-                    od4.send(rawUInt64CANFrame, sampleTimeStamp, ID);
+
+                    if (recFile && recFile->good()) {
+                      cluon::data::Envelope envelope;
+                      {
+                        cluon::ToProtoVisitor protoEncoder;
+                        {
+                          envelope.dataType(rawUInt64CANFrame.ID());
+                          rawUInt64CANFrame.accept(protoEncoder);
+                          envelope.serializedData(protoEncoder.encodedData());
+                          envelope.sent(cluon::time::now());
+                          envelope.sampleTimeStamp(sampleTimeStamp);
+                          envelope.senderStamp(ID);
+                        }
+                      }
+
+                      std::string serializedData{cluon::serializeEnvelope(std::move(envelope))};
+                      recFile->write(serializedData.data(), serializedData.size());
+                      recFile->flush();
+                    }
+                    else {
+                      od4->send(rawUInt64CANFrame, sampleTimeStamp, ID);
+                    }
                 }
             }
 #endif
