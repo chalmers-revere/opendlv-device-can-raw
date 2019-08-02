@@ -29,7 +29,7 @@ This microservice is created automatically on changes to this repository via Doc
 To run this microservice using our pre-built Docker image, simply start it as follows:
 
 ```
-docker run --rm -ti --net=host --privileged chalmersrevere/opendlv-device-can-raw-multi:v0.0.2 --cid=111 --id=0 --can=can0
+docker run --rm -ti --net=host --privileged chalmersrevere/opendlv-device-can-raw-multi:v0.0.3 --cid=111 --id=0 --can-channels=can0
 ```
 
 
