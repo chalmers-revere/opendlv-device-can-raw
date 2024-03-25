@@ -1,3 +1,5 @@
+Moved to https://git.opendlv.org.
+
 ## OpenDLV Microservice to interface with CAN
 
 This repository provides source code to interface with data from a CAN bus
